@@ -39,7 +39,7 @@ private:
 };
 
 template <typename T>
-threadpool<T>::threadpool(int actor_model, connection_pool * connpool,int thread_number=8,int max_request=10000)
+threadpool<T>::threadpool(int actor_model, connection_pool * connpool,int thread_number,int max_request)
 {
     if(thread_number<= 0||max_request<= 0)
         throw std::exception();
@@ -79,7 +79,7 @@ bool threadpool<T>::append(T *request, int state){
         return false;
     }
 
-    request->m_satae=state;
+    request->m_state=state;
     m_workqueue.push_back(request);
     m_queuelocker.unlock();
     m_queuestat.post();
@@ -233,4 +233,4 @@ void threadpool<T>::run(){
 
 
 
-#endif _THREADPOOL_H_
+#endif //_THREADPOOL_H_ 

@@ -1,7 +1,8 @@
-// #ifdef  _CONFIG_H_
-// #define _CONFIG_H_
 
-//#include"webserver.h"
+#ifndef  _CONFIG_H_
+#define _CONFIG_H_
+
+#include"webserver.h"
 #include <unistd.h>
 #include<stdlib.h>
 using namespace std;
@@ -55,4 +56,4 @@ public:
 
 };
 
-// #endif  _CONFIG_H_
+#endif  //_CONFIG_H_

@@ -25,58 +25,6 @@ int http_conn::m_epollfd=-1;
 
 
 
-//这个将文件描述符设置为非阻塞态，主要是用于epoll的ET 模式； 但是函数实现用的相关宏和方法不太理解
-int setnonblocking(int fd)
-{
-    int old_option = fcntl(fd,F_GETFL);
-    int new_option = old_option | O_NONBLOCK;
-    fcntl(fd,F_SETFL,new_option);
-    return old_option;
-}
-
-void addfd(int epollfd, int fd, bool one_shot, int TRIFMode)
-{
-    epoll_event event;
-    event.data.fd=fd;
-    //ET 模式   EPOLLONESHOT,EPOLLRDHUP是什么意义？？
-    if(TRIFMode==1){
-        event.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
-    }
-    else{
-        event.events = EPOLLIN | EPOLLRDHUP;
-    }
-
-    if(one_shot){
-        event.events |= EPOLLONESHOT ;
-    }
-    
-    epoll_ctl(epollfd,EPOLL_CTL_ADD,fd,&event);
-    setnonblocking(fd);
-}
-
-
-void removefd(int epollfd, int fd)
-{   
-    epoll_ctl(epollfd,EPOLL_CTL_DEL,fd,0);
-    close(fd);
-}
-
-void modfd(int epollfd, int fd, int ev, int TRIGMode)
-{
-    epoll_event event;
-    event.data.fd=fd;
-
-    if(TRIGMode==1){
-        event.events = ev | EPOLLONESHOT | EPOLLET | EPOLLRDHUP ;
-    }
-    else{
-        event.events = ev | EPOLLONESHOT | EPOLLRDHUP;
-    }
-
-    epoll_ctl(epollfd,EPOLL_CTL_MOD,fd,&event);
-
-}
-
 
 //用来取消内存映射
 void http_conn::unmap()
@@ -166,7 +114,7 @@ void http_conn::init()
 
 //循环读取客户数据，直到无数据可读或对方关闭连接
 //非阻塞ET工作模式下，需要一次性将数据读完
-void http_conn::close_conn(bool real_close = true)
+void http_conn::close_conn(bool real_close)
 {
     if(real_close && (m_sockfd != -1)){
         printf("close %d\n",m_sockfd);
@@ -189,11 +137,18 @@ bool http_conn::read_once()
     if (m_TRIGMode == 0)
     {
         bytes_read = recv(m_sockfd, m_read_buf + m_read_idx, READ_BUFFER_SIZE - m_read_idx, 0);
+        
         m_read_idx += bytes_read;
+
+        if (bytes_read > 0)
+        {
+            return true;            /* code */
+        }
+       
     }
 
     // ET 模式
-    else if (m_TRIGMode == 1)
+    else
     {
         while (true)
         {
@@ -217,6 +172,7 @@ bool http_conn::read_once()
 
         return true;
     }
+    return false;
 }
 
 bool http_conn::write()
@@ -286,10 +242,10 @@ bool http_conn::write()
 
 void http_conn::initmysql_result(connection_pool *connpool)
 {
-    MYSQL * mysql =NULL;
+    MYSQL * mysql = nullptr;
     connectionRAII mysqlcon(&mysql,connpool);
 
-    if(mysql_query(mysql,"select username,passwd form user")){
+    if(mysql_query(mysql,"select username,passwd from user")){
         throw std::exception();
     }
 
@@ -524,7 +480,7 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
 //解析报文中的请求头
 http_conn::HTTP_CODE http_conn::parse_headers(char *text)
 {
-    if (text == '\0')
+    if (*text == '\0')
     {
 
         if (m_content_length != 0)
@@ -585,7 +541,22 @@ http_conn::HTTP_CODE http_conn::parse_content(char *text)
 // 最后最后 [ mmap() ] ,将文件映射到内存中并将地址赋值给m_file_address(后续赋值给m_iv[1])，为后续的主线程进行IO，调用writev作准备；
 http_conn::HTTP_CODE http_conn::do_request()
 {
-    std::string file_root = "/home/yxqf/desket/LinuxWebServer/root";
+
+    /*
+    webserver:
+    char server_path[200];
+    getcwd(server_path, 200);
+    char root[] = "/root";
+    m_root = (char *)malloc(strlen(server_path) + strlen(root) + 1);
+    root/(html,.jpg/...)
+
+
+    http_conn:
+    doc_root =  m_root
+    
+    */
+
+    std::string file_root = doc_root;
     // 给根目录串先插入对象的m_real_file字符串中;
     strcpy(m_real_file, file_root.c_str());
 
@@ -634,7 +605,7 @@ http_conn::HTTP_CODE http_conn::do_request()
             sql_insert += name + "', '" + passwd + "')";
 
 
-            if(users.count(name)==0){
+            if(users.find(name) == users.end()){
 
                 m_lock.lock();
                 int ret = mysql_query(mysql, sql_insert.c_str());
@@ -800,7 +771,7 @@ bool http_conn::add_status_line(int status,const char*title)
 bool http_conn::add_headers(int content_length)
 {
 
-    return add_content_length(content_length)&&add_linger&&add_blank_line();
+    return add_content_length(content_length)&&add_linger()&&add_blank_line();
 }
 bool http_conn::add_content_type()
 {

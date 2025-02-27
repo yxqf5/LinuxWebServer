@@ -20,10 +20,10 @@ connection_pool::~connection_pool()
 
 }
 
-
 MYSQL *connection_pool::GetConnection()
 {
-    if(!m_Freeconn)
+    MYSQL *con = NULL;
+    if (connlist.size() == 0)
         return NULL;
 
     lock.lock();
@@ -38,7 +38,6 @@ MYSQL *connection_pool::GetConnection()
 
     return conn;
 }
-
 
 bool connection_pool::ReleaseConnection(MYSQL*conn){
 
@@ -133,7 +132,7 @@ void connection_pool::init(string url, string User, string PassWord, string Data
 //
 connectionRAII::connectionRAII(MYSQL**SQL,connection_pool *connpool){//zhe li MYSQl wei sm shi shuang zhizhen??
 
-    *SQL=connpollRAII->GetConnection();
+    *SQL=connpool->GetConnection();
     connRAII=*SQL;
     connpollRAII=connpool;
 

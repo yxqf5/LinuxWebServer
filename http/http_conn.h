@@ -2,33 +2,36 @@
 #define HTTPCONNECION_H
 
 #include <unistd.h>//close()
-// #include <signal.h>//?
-// #include <sys/types.h>//?
+#include <signal.h>//?
+#include <sys/types.h>//?
 #include <sys/epoll.h>
 #include <fcntl.h>//open()
 #include <sys/socket.h>
 #include <netinet/in.h>//struct sockaddr_in 
-// #include <arpa/inet.h>
+#include <arpa/inet.h>
 #include <assert.h> //duan yan
 #include <sys/stat.h>//struct stat   -n 165 
 #include <string.h>
 #include <pthread.h>
 #include <stdio.h>
-// #include <stdlib.h>
+#include <stdlib.h>
 #include <sys/mman.h>//zhe ge shi bu shi na ge [mmap();] function;
-// #include <stdarg.h>
+#include <stdarg.h>
 #include <errno.h>
-// #include <sys/wait.h>
+#include <sys/wait.h>
 #include <sys/uio.h>//writev()
 #include <map>
 #include<string>
 
 #include "../lock/locker.h"
 #include "../sql_connpool/sql_connection_pool.h"
+#include <mysql/mysql.h>
+#include "../FuncOfepoll.h"
 // #include "../timer/lst_timer.h"
 // #include "../log/log.h"
 
-
+using std::string;
+using std::map;
 
 class http_conn
 {
