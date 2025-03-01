@@ -157,7 +157,7 @@ void WebServer::eventListen()
 void WebServer::eventLoop()
 {
 
-    printf("the eventLoop function \n");
+   //printf("the eventLoop function \n");
     bool timeout = false;
 
     bool stop_server = false;
@@ -167,7 +167,7 @@ void WebServer::eventLoop()
 
         int number = epoll_wait(m_epollfd, events, MAX_EVENT_NUMBER, -1);
 
-        printf("epoll_wait number = %d",number);
+        //printf("epoll_wait number = %d \n",number);
         if (number < 0 && errno != EINTR)
         {
             break;
@@ -186,12 +186,15 @@ void WebServer::eventLoop()
                 bool flag = dealclinetdata();
 
 
-                printf("// m_listenfd 没有使用EPOLLONESHOT ，所以一直会被epoll检测");
+               // printf("// m_listenfd 没有使用EPOLLONESHOT ，所以一直会被epoll检测");
                 if (flag == false)
                     continue;
             }
             else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
             {
+                epoll_ctl(m_epollfd, EPOLL_CTL_DEL, sockfd, 0);
+                close(sockfd);
+                http_conn::m_user_count--;
 
                 /* code */
             }
@@ -229,13 +232,13 @@ bool WebServer::dealclinetdata()
 
         if (connfd < 0)
         {
-            printf(" accept errno is:%d", errno);
+            //printf(" accept errno is:%d", errno);
             return false;
         }
 
         if (http_conn::m_user_count >= MAX_FD)
         {
-            printf("Internal server busy");
+            //printf("Internal server busy");
             return false;
         }
 
@@ -261,7 +264,7 @@ bool WebServer::dealclinetdata()
 void WebServer::dealwithread(int sockfd)
 {
 
-    // reator
+    // reator  //未完成
     if (m_actormodel == 1)
     {
 
@@ -276,6 +279,12 @@ void WebServer::dealwithread(int sockfd)
         if (users[sockfd].read_once())
         {
             m_pool->append_p(users + sockfd);
+        }
+        else
+        {
+            epoll_ctl(m_epollfd, EPOLL_CTL_DEL, sockfd, 0);
+            close(sockfd);
+            http_conn::m_user_count--;
         }
     }
 }
@@ -293,7 +302,12 @@ void WebServer::dealwithwrite(int sockfd)
 
         if (users[sockfd].write())
         {
-            printf("send data to the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+           // printf("send data to the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+        }
+        else{
+                            epoll_ctl(m_epollfd, EPOLL_CTL_DEL, sockfd, 0);
+                close(sockfd);
+                http_conn::m_user_count--;
         }
     }
 }

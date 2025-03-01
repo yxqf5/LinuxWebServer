@@ -43,6 +43,7 @@ void http_conn::unmap()
 void http_conn::process()
 {
     HTTP_CODE read_ret = process_read();
+    //printf("process read_ret");
     if (read_ret == NO_REQUEST)
     {
         modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
@@ -191,7 +192,7 @@ bool http_conn::write()
 
         temp = writev(m_sockfd, m_iv, m_iv_count);
 
-        if (temp <= 0)
+        if (temp < 0)
         {
             if (errno == EAGAIN)
             {
@@ -209,7 +210,9 @@ bool http_conn::write()
         if (bytes_have_send >= m_iv[0].iov_len)
         {
             m_iv[0].iov_len = 0;
-            m_iv[1].iov_base = m_file_address + (bytes_have_send - m_iv[0].iov_len);
+            //m_iv[1].iov_base = m_file_address + (bytes_have_send - m_iv[0].iov_len); //error
+            m_iv[1].iov_base = m_file_address + (bytes_have_send - m_write_idx);
+
             m_iv[1].iov_len = bytes_to_send;
             /* code */
         }
@@ -352,9 +355,9 @@ bool http_conn::process_write(HTTP_CODE ret)
         }
         case BAD_REQUEST:
         {
-            add_status_line(404, error_400_title);
-            add_headers(strlen(error_400_form));
-            if (!add_content(error_400_form))
+            add_status_line(404, error_404_title);
+            add_headers(strlen(error_404_form));
+            if (!add_content(error_404_form))
             {
                 return false;
             }
@@ -419,7 +422,7 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
     char* theMethod=text;
     if(strcasecmp(theMethod,"GET")==0){
         m_method=GET;
-    }else if(strcasecmp(theMethod,"POST")){
+    }else if(0 == strcasecmp(theMethod,"POST")){
         m_method=POST;
         m_cgi=1;
     }
@@ -453,17 +456,27 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
         return BAD_REQUEST;
     }
 
-    if(strcasecmp(m_url,"HTTP://")==0){
-        m_url+=7;
-        m_url=strchr(m_url,'/');
+    if (strcasecmp(m_url, "HTTP://") == 0)
+    {
+        m_url += 7;
+        m_url = strchr(m_url, '/');
+        if (!m_url)
+        {
+            return BAD_REQUEST; // 未找到路径分隔符
+        }
     }
 
-    if(strcasecmp(m_url,"HTTPS://")){
-        m_url+=8;
-        m_url=strchr(m_url,'/');
+    if (strcasecmp(m_url, "HTTPS://")==0)
+    {
+        m_url += 8;
+        m_url = strchr(m_url, '/');
+        if (!m_url)
+        {
+            return BAD_REQUEST; // 未找到路径分隔符
+        }
     }
 
-    if(m_url || m_url[0]!='/'){
+    if(!m_url || m_url[0]!='/'){
         return BAD_REQUEST;
     }
 
@@ -690,7 +703,7 @@ http_conn::HTTP_CODE http_conn::do_request()
 
     int fd=open(m_real_file,O_RDONLY);
     
-    m_file_address = (char*)mmap(0,m_file_stat.st_size,PROT_READ,MAP_PRIVATE,fd,0);
+    m_file_address = (char *)mmap(0, m_file_stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
 
     close(fd);
     return FILE_REQUEST;

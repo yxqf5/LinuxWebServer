@@ -7,6 +7,12 @@
         "socket": "cpp",
         "string_view": "cpp",
         "initializer_list": "cpp",
-        "utility": "cpp"
+        "utility": "cpp",
+        "executor": "cpp",
+        "mutex": "cpp",
+        "deque": "cpp",
+        "string": "cpp",
+        "vector": "cpp",
+        "io_context": "cpp"
     }
 }
