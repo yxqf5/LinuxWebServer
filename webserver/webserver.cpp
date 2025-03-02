@@ -3,10 +3,77 @@
 #include "FuncOfepoll.h"
 
 
+//定时器相关部分
+
+void WebServer::adjust_timer(util_timer* timer){
+
+    time_t cur = time(nullptr);
+    timer->expire =cur + 3*TIMESLOT;
+
+    utils.m_timer_list.adjust_timer(timer);
+
+
+
+}
+void WebServer::deal_timer(util_timer* timer,int sockfd){
+
+    //关闭连接
+
+    if (timer)
+    {
+        timer->call_backFunc(timer->user_data);
+        utils.m_timer_list.del_timer(timer);
+        //delete timer;
+        users_timer[sockfd].timer = nullptr;
+    }
+}
+
+bool WebServer::dealwithsignal(bool &timeout, bool &stop_server)
+{
+
+    int ret = 0;
+    int sig;
+    char signals[1024];
+
+    ret = recv(m_pipefd[0], signals, sizeof(signals), 0);
+
+    if (ret == -1)
+    {
+        return false;
+    }
+    else if (ret == 0)
+    {
+        return false;
+    }
+    else
+    {
+
+        for (size_t i = 0; i < ret; i++)
+        {
+            switch (signals[i])
+            {
+            case SIGALRM:
+            {
+                timeout = true;
+                break;
+            }
+            case SIGTERM:
+            {
+                stop_server = true;
+                break;
+            }
+            }
+            /* code */
+        }
+    }
+    return true;
+}
+
 WebServer::WebServer(/* args */)
 {
 
     users = new http_conn[MAX_FD];
+    users_timer = new client_data[MAX_FD];
 
     // root目录
 
@@ -32,7 +99,7 @@ WebServer::~WebServer()
     close(m_pipefd[1]);
 
     delete[] users;
-    // delete[] ;
+    delete[] users_timer;
     delete m_pool;
 }
 
@@ -135,10 +202,10 @@ void WebServer::eventListen()
     ret = listen(m_listenfd, 5);
     assert(ret >= 0);
 
-    // 计时器没写；
+    // 计时器,设置超时时间
+    utils.init(TIMESLOT);
 
     // epoll创建
-
     epoll_event events[MAX_EVENT_NUMBER];
     m_epollfd = epoll_create(5);
     assert(m_epollfd != -1);
@@ -146,11 +213,26 @@ void WebServer::eventListen()
     addfd(m_epollfd, m_listenfd, false, m_LISTENTrigmode);
     http_conn::m_epollfd = m_epollfd;
 
-    // 后面都和定时器，信号量有关
+
+    //计时器监听相关
+    //创建管道m_pipefd[2];
     ret = socketpair(PF_UNIX, SOCK_STREAM, 0, m_pipefd);
     assert(ret != -1);
+
+    //1号端用来写，需要非阻塞，以防止信号处理函数在写入事件时阻塞导致下一个超时信号到来被屏蔽；
     setnonblocking(m_pipefd[1]);
+    //0号是读端，被epoll监控，统一事件源；
     addfd(m_epollfd, m_pipefd[0], false, 0);
+
+    utils.addsig(SIGPIPE, SIG_IGN);
+    utils.addsig(SIGALRM, utils.sig_handler, false);
+    utils.addsig(SIGTERM, utils.sig_handler, false);
+
+    alarm(TIMESLOT);
+
+    //
+    Util::m_pipefd = m_pipefd; 
+    Util::m_util_epollfd = m_epollfd;
 }
 
 // socket 创建
@@ -190,12 +272,21 @@ void WebServer::eventLoop()
                 if (flag == false)
                     continue;
             }
+            //处理定时器的信号
+            else if((sockfd == m_pipefd[0]) && (events[i].events & EPOLLIN) )
+            {
+                bool flag = dealwithsignal(timeout, stop_server);
+                if (false == flag)
+                {
+                    printf("dealwithsignal waring\n");
+                }
+                
+            }
             else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
             {
-                epoll_ctl(m_epollfd, EPOLL_CTL_DEL, sockfd, 0);
-                close(sockfd);
-                http_conn::m_user_count--;
-
+                //检测到关闭，移除相应的定时器
+                util_timer *timer = users_timer[sockfd].timer;
+                deal_timer(timer,sockfd);
                 /* code */
             }
             // 处理读写
@@ -210,12 +301,30 @@ void WebServer::eventLoop()
                 dealwithwrite(sockfd);
             }
         }
+        if (timeout)
+        {
+            utils.timer_handler();
+            timeout = false;
+        }
     }
 }
 void WebServer::timer(int connfd, struct sockaddr_in client_address)
 {
 
     users[connfd].init(connfd, client_address, m_root, m_CONNTrigmode, m_close_log, m_user, m_passwd, m_databaseName);
+
+
+    //注册定时器，加入最小堆
+    users_timer[connfd].address = client_address;//1
+    users_timer[connfd].sockfd = connfd;//2
+    util_timer *timer = new util_timer;
+    timer->call_backFunc = call_backFunc;
+    time_t cur_time = time(nullptr);
+    timer->expire = cur_time + 3*TIMESLOT;
+    timer->user_data = &users_timer[connfd]; // 一直不能的原因是在这里；
+    users_timer[connfd].timer = timer;//3
+
+    utils.m_timer_list.add_timer(timer);
 }
 // void WebServer::adjust_timer();
 
@@ -263,10 +372,15 @@ bool WebServer::dealclinetdata()
 
 void WebServer::dealwithread(int sockfd)
 {
-
+    util_timer *timer = users_timer[sockfd].timer;
     // reator  //未完成
     if (m_actormodel == 1)
     {
+        if(timer)
+        {
+            adjust_timer(timer);
+        }
+        
 
         
 
@@ -279,21 +393,27 @@ void WebServer::dealwithread(int sockfd)
         if (users[sockfd].read_once())
         {
             m_pool->append_p(users + sockfd);
+            if (timer)
+            {
+                adjust_timer(timer);
+            }
         }
         else
         {
-            epoll_ctl(m_epollfd, EPOLL_CTL_DEL, sockfd, 0);
-            close(sockfd);
-            http_conn::m_user_count--;
+            deal_timer(timer,sockfd);
         }
     }
 }
 void WebServer::dealwithwrite(int sockfd)
 {
+    util_timer *timer = users_timer[sockfd].timer;
 
     if (m_actormodel == 1)
     {
-
+        if(timer)
+        {
+            adjust_timer(timer);
+        }
         m_pool->append(users + sockfd, 1);
     }
 
@@ -302,12 +422,15 @@ void WebServer::dealwithwrite(int sockfd)
 
         if (users[sockfd].write())
         {
-           // printf("send data to the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+            // printf("send data to the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+            if (timer)
+            {
+                adjust_timer(timer);
+            }
         }
-        else{
-                            epoll_ctl(m_epollfd, EPOLL_CTL_DEL, sockfd, 0);
-                close(sockfd);
-                http_conn::m_user_count--;
+        else
+        {
+            deal_timer(timer, sockfd);
         }
     }
 }

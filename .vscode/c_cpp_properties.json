@@ -6,10 +6,10 @@
                 "${workspaceFolder}/**"
             ],
             "defines": [],
-            "compilerPath": "/usr/bin/gcc-12",
+            "compilerPath": "/usr/bin/clang",
             "cStandard": "c17",
             "cppStandard": "c++14",
-            "intelliSenseMode": "linux-gcc-x64"
+            "intelliSenseMode": "linux-clang-x64"
         }
     ],
     "version": 4

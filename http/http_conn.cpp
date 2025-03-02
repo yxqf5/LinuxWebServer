@@ -529,7 +529,8 @@ http_conn::HTTP_CODE http_conn::parse_headers(char *text)
     }
     else
     {
-        printf("other header: %s", text);
+
+        //printf("other header: %s", text);
     }
 
     return NO_REQUEST;
